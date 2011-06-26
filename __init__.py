@@ -47,7 +47,10 @@ class var(object):
 #
 
 class FallthroughMethods(type):
-    """Metaclass for Proxies that passes special method lookup through to an instance var on the created class
+    """Metaclass for Proxies that defines all special methods
+
+    I cause all special method lookup to be delegated transparently to an
+    instance var on the created class.
 
     As explained in
     http://docs.python.org/reference/datamodel.html#new-style-special-lookup,
@@ -55,7 +58,7 @@ class FallthroughMethods(type):
     implicitly. For example, when len(obj) is called, neither
     obj.__getattribute__ nor type(obj).__getattribute__ is consulted.
     Therefore, we must explicitly define __len__ and all other special methods
-    on the Proxy class. This metaclass lets us do this in a loop rather than
+    on the Proxy class. This metaclass lets us do so in a loop rather than
     typing a lot of repetitive code (or paying function call penalties if we
     were to factor up).
 
@@ -73,14 +76,45 @@ class FallthroughMethods(type):
 
                 """
                 inner_obj = object.__getattribute__(self, '_threadlocals_from_stacked').value
+
+                # If the method is __del__(), tolerate its absence from both
+                # the instance and the type; it just plain isn't around if you
+                # don't define it. TODO: optimize by figuring this out at class
+                # definition time.
+                nop_or_not = [lambda *args, **kwargs: None] if method_name == '__del__' else []
+
                 underlying_method = getattr(
                     inner_obj,
                     method_name,
-                    getattr(type(inner_obj), method_name))
+                    getattr(type(inner_obj), method_name, *nop_or_not))
                 return underlying_method(*args, **kwargs)
             return fallthrough
+
         super(FallthroughMethods, cls).__init__(name, bases, attributes)
-        for method_name in ['__eq__', '__neq__', '__abs__', '__pos__', '__invert__', '__neg__', '__radd__', '__add__', '__rsub__', '__sub__', '__rdiv__', '__div__', '__rmul__', '__mul__', '__rand__', '__and__', '__ror__', '__or__', '__rxor__', '__xor__', '__rlshift__', '__lshift__', '__rrshift__', '__rshift__', '__rmod__', '__mod__', '__rdivmod__', '__divmod__', '__rtruediv__', '__truediv__', '__rfloordiv__', '__floordiv__', '__rpow__', '__pow__', '__cmp__', '__str__', '__unicode__', '__complex__', '__int__', '__long__', '__float__', '__oct__', '__hex__', '__hash__', '__len__', '__iter__', '__delattr__', '__setitem__', '__delitem__', '__setslice__', '__delslice__', '__getitem__', '__call__', '__getslice__', '__nonzero__']:
+
+        # These are basically all the special methods from
+        # http://docs.python.org/reference/datamodel.html#new-style-special-lookup.
+        #
+        # TODO: Some of these might be sufficiently passed through by our
+        # __getattribute__(). Write tests and pare these down.
+        #
+        # TODO: We apparently aren't allowed to write to __instancecheck__ and
+        # __subclasscheck__. __setattr__ was causing test failures:
+        # AttributeError: 'Proxy' object has no attribute
+        # '_threadlocals_from_stacked'.
+        for method_name in ['call', 'getattr', 'delattr', 'getitem', 'del',
+            'repr', 'str', 'lt', 'le', 'eq', 'ne', 'gt', 'ge', 'cmp', 'hash',
+            'rcmp', 'nonzero', 'len', 'unicode', 'get', 'set', 'delete',
+            'getslice', 'setitem', 'delitem', 'add', 'radd', 'iadd', 'mul',
+            'rmul', 'imul', 'coerce', 'contains', 'iter', 'reversed',
+            'setslice', 'delslice', 'sub', 'floordiv', 'mod', 'divmod', 'pow',
+            'lshift', 'rshift', 'and', 'xor', 'or', 'truediv', 'div', 'rsub',
+            'rdiv', 'rtruediv', 'rfloordiv', 'rmod', 'rdivmod', 'rpow',
+            'rlshift', 'rrshift', 'rand', 'rxor', 'ror', 'isub', 'idiv',
+            'itruediv', 'ifloordiv', 'imod', 'ipow', 'ilshift', 'irshift',
+            'iand', 'ixor', 'ior', 'neg', 'pos', 'abs', 'invert', 'complex',
+            'int', 'long', 'float', 'oct', 'hex', 'index', 'enter', 'exit']:
+            method_name = '__%s__' % method_name
             setattr(cls, method_name, fallthrough_method(method_name))
 
 

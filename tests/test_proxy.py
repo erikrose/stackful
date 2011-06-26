@@ -19,6 +19,9 @@ def test_add():
 def test_radd():
     eq_(1 + sixProxy(), 7)
 
+def test_lt():
+    assert sixProxy() < 7
+
 def test_list_comparison():
     """Make sure proxies are convincing enough to fool list comparison.
 
@@ -34,9 +37,8 @@ def test_attr_passthrough():
     assert strProxy().startswith('fr')
 
 def test_isinstance():
-    raise SkipTest
     assert isinstance(sixProxy(), int)
 
 def test_issubclass():
-    raise SkipTest
+    raise SkipTest  # Still fails.
     assert issubclass(type(strProxy()), basestring)

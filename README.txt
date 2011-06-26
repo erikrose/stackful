@@ -8,3 +8,4 @@ Examples:
 
 Caveats:
  * Works only with globals at the moment.
+ * It's impossible to hide from hasattr(). That's about the only introspection we can't paper over.
