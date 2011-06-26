@@ -7,6 +7,10 @@ def f():
     global g
     return currentframe()
 
+def non():
+    global qux
+    print qux
+
 def hi():
     global g
     a = 5

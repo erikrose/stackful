@@ -1,62 +1,39 @@
 """Dynamically scoped (call-stack-based) variables for Python"""
 
-# Goals:
-#  * Backward-compatible with vars not defined with the framework
-
 from inspect import currentframe
-
-# _internal_modules = set([__module__])
-
-
-def _assignment_var():
-    """Return the name of the symbol to which I'm being assigned in the first upward frame above this lib."""
-    # TODO: Actually loop through the frames until we get out of this lib.
+from lazypy import Promise
+import threading
 
 
-def _deepest_frame_not_mine():
-    frame = currentframe()
-    try:
-        while frame.f_back:
-            frame = frame.f_back  # TODO: Make sure the old value of frame gets GCd.
-            if getmodule(frame) not in _internal_modules:
-                return frame
-        raise NotImplementedError('Really? No frame outside the stacked package?')
-    finally:
-        # Break cycles so we don't have to fall back on the cycle detector, which might take a long time. Recommended by http://docs.python.org/lib/inspect-stack.html.
-        del frame
-
-
-def _var_from_outside(name):
-    """Return the value of the named symbol from the newest frame not from this library."""    
-    frame = _deepest_frame_not_mine()
-    try:
-        return frame.f_globals[name]  # Used to return locals preferentially, but I can't mutate those.
-    finally:
-        del frame
+NoSuchThing = object()
 
 
 class var(object):
     def __init__(self, name, value):
         self.name = name
         self.value = value
-    
+
     def __enter__(self):
-        """Save orig value of var. Rebind var to a StackedPromise."""
-        frame = currentframe().f_back  # TODO: Use _deepest_frame_not_mine().
-        self.orig = frame.f_globals[self.name]
-        frame.f_globals[self.name] = self.value
-        del frame
-    
-    def __exit__(self, a, b, c):
-        """Rebind var in upper frame to its original value."""        
+        """Save original value of var. Rebind var to a Proxy."""
         frame = currentframe().f_back
-        frame.f_globals[self.name] = self.orig
+        self.orig = frame.f_globals.get(self.name, NoSuchThing)
+        frame.f_globals[self.name] = Proxy(self.value, self.orig, self.name)
+        # Too bad it won't let us mutate f_locals.
+        del frame
+
+    def __exit__(self, a, b, c):
+        """Rebind var in upper frame to its original value."""
+        frame = currentframe().f_back
+        if self.orig is NoSuchThing:
+            del frame.f_globals[self.name]
+        else:
+            frame.f_globals[self.name] = self.orig
         del frame
 
 
 def my_getattribute(self, name):
-    # TODO: Make _original a threadlocal bunch of stacks.
-    return self.___original if name == '___original' else getattr(self.___original, name)
+    # TODO: Make ___value a threadlocal bunch of stacks.
+    return self.___value if name == '___value' else getattr(self.___value, name)
 
 
 class StackedMetaclass(type):
@@ -67,15 +44,35 @@ class StackedMetaclass(type):
         super(StackedMetaclass, klass).__init__(name, bases, attributes)
 
 
-class StackedPromise(object):
-    """Dynamically-scoped lazy proxy to a value"""
+class Proxy(Promise):
+    """Dynamically-scoped (and thus also thread-local) proxy to a value
 
-    __metaclass__ = StackedMetaclass
+    Acts just like the passed-in `value` in the current thread and like the
+    separately passed-in `original` value in other threads. Since we don't have
+    the opportunity to initiate a thread-local lookup when I am referenced, be
+    sneaky and do the lookup when I am operated upon in any way. This should
+    catch the vast majority of actual uses.
 
-    def __init__(self, original):
-        self.___original = original
+    The magic methods are defined in the metaclass because Python looks for
+    some of them, like __instancecheck__, only on the metaclass.
+
+    """
+    def __init__(self, value, orig, name='<unspecified>'):
+        """Constructor
+
+        Args:
+            value: the value to expose in the current
+            original: value to fall back to in other threads.
+
+        """
+        self.___value = threading.local()
+        self.___value.value = value
+        self.orig = orig
+        self.name = name
 
     def __force__(self):
-        return self.original
-
-    # def __getattribute__(
+        ret = self.___value.__dict__.get('value', self.orig)  # TODO: What happens when you try to read a threadlocal that's not defined in this thread?
+        if ret is NoSuchThing:  # We stacked on top of an uninitialized global.
+            raise NameError("name '%s' is not defined in this thread" % self.name)
+        else:
+            return ret
