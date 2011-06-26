@@ -29,6 +29,10 @@ def test_list_comparison():
     assert [sixProxy()] == [6]
     eq_([[sixProxy()]], [[6]])
 
+def test_attr_passthrough():
+    """Make sure normal attr access falls through to the contained object."""
+    assert strProxy().startswith('fr')
+
 def test_isinstance():
     raise SkipTest
     assert isinstance(sixProxy(), int)
