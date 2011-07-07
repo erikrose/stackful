@@ -160,11 +160,11 @@ of lies we could tell. Here are stackful’s constraints:
   to read-only and mutable values.
 * There are a few introspections we can’t paper over:
 
- * The ``obj is other_obj`` object identity test. It is understandable that
-   the interpreter goes straight to pointer comparison here for speed.
- * ``type(obj)``. There’s just no escaping this, but code should be using
-   ``isinstance()`` for type testing, and other uses are pretty niche.
-   ``isinstance()`` looks at ``__class__``, and we do fake that.
+  * The ``obj is other_obj`` object identity test. It is understandable that
+    the interpreter goes straight to pointer comparison here for speed.
+  * ``type(obj)``. There’s just no escaping this, but code should be using
+    ``isinstance()`` for type testing, and other uses are pretty niche.
+    ``isinstance()`` looks at ``__class__``, and we do fake that.
 
 
 Version history
