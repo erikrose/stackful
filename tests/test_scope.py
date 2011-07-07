@@ -1,5 +1,6 @@
-from threading import Thread
+from threading import Thread, Lock
 from unittest import TestCase
+from warnings import catch_warnings
 
 from nose import SkipTest
 from nose.tools import eq_, assert_raises
@@ -29,46 +30,103 @@ from stacked.tests import other_module
 
 
 def _get_g():
+    """Return the global g but from a deeper stack frame."""
     return g
 
+def _set_g():
+    global g
+    g = 'yeah'
 
-class ScopeTests(TestCase):
-    def setUp(self):
+
+class ModuleGlobalTests(TestCase):
+    """Tests that may create a global ``g`` in this module
+
+    Makes sure they don't leave it lying around.
+
+    """
+    def tearDown(self):
         global g
-        g = 0
+        try:
+            del g
+        except NameError:
+            pass
 
     def test_global(self):
         global g
+        g = 0
         with stacked.var('g', 1):
             eq_(_get_g(), 1)
         eq_(g, 0)
 
-    def tearDown(self):
+    def test_multi_level(self):
         global g
-        del g
+        g = 0
+        with stacked.var('g', 1):
+            eq_(_get_g(), 1)
+            with stacked.var('g', 2):
+                eq_(_get_g(), 2)
+            eq_(_get_g(), 1)
+        eq_(g, 0)
 
-    # def test_threads():
-    #     global g
-    #     things = []
-    #
-    #     def get_global():
-    #         things.append(g)
-    #
-    #     eq_(g, 0)
-    #     with stacked.var('g', 1):
-    #         t = Thread(target=get_global)
-    #         t.start()
-    #         t.join()
-    #         eq_(0 + 1, things[0] + 1)
+    def test_threads(self):
+        """Make sure stackful vars are really thread-specific."""
+        global g
+        g = 0
+        things = []
+        lock = Lock()
 
+        def get_global():
+            lock.acquire()
+            # Operate on g to collapse its quantum superposition:
+            things.append(g + 1)
 
-def test_new_global():
-    """Make sure stacking works atop uninitialized globals."""
-    global g
-    assert_raises(NameError, lambda: g)
-    with stacked.var('g', 2):
-        eq_(_get_g(), 2)
-    assert_raises(NameError, lambda: g)
+        with stacked.var('g', 1):
+            t = Thread(target=get_global)  # TODO: Right now, the thread sees it as 0. Should it be 1?
+            lock.acquire()
+            t.start()
+            with stacked.var('g', 9):
+                lock.release()
+                t.join()
+                eq_(things[0], 1)
+
+    def test_rebinding_warning(self):
+        """We can't intercept rebinding a stackful variable downstream like Lisp does.
+
+        We should scream if someone tries.
+
+        """
+        global g
+        g = 0
+        with catch_warnings(record=True) as warnings:
+            with stacked.var('g', 8):
+                _set_g()
+                eq_(g, 'yeah')
+        eq_(len(warnings), 1)
+        assert 'stackfulness' in warnings[0].message.args[0]
+        # var() restores the variable on exit despite the rebinding. This may
+        # or may not be a good idea.
+        eq_(g, 0)
+
+    def test_copying_proxies_to_immutables(self):
+        """Gee, I wonder how this acts. What should it even do? It should act like it's copying an immutable, not like it's getting an obj ref."""
+        global g
+        g = 0
+        with stacked.var('g', 7):
+            seven = g  # Should act as if it's copying the 7.
+            with stacked.var('g', 8):
+                eight = g
+        eq_(seven, 7)
+        eq_(eight, 8)
+        eq_(g, 0)
+
+    def test_new_global(self):
+        """Make sure stacking works atop uninitialized globals."""
+        global g
+        assert_raises(NameError, lambda: g)
+        with stacked.var('g', 2):
+            eq_(_get_g(), 2)
+        assert_raises(NameError, lambda: g)
+
 
 def test_other_modules():
     """Make sure globals in other modules work."""
@@ -88,4 +146,4 @@ def test_other_modules():
 #         return c
 #     eq_(closure(), 0)
 #     with stacked.var('c', 1):
-#         
+#
