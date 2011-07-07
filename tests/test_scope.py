@@ -5,8 +5,8 @@ from warnings import catch_warnings
 from nose import SkipTest
 from nose.tools import eq_, assert_raises
 
-import stacked
-from stacked.tests import other_module
+from stackful import stackful
+from stackful.tests import other_module
 
 
 # def NO_test_existing_var():
@@ -54,16 +54,16 @@ class ModuleGlobalTests(TestCase):
     def test_global(self):
         global g
         g = 0
-        with stacked.var('g', 1):
+        with stackful('g', 1):
             eq_(_get_g(), 1)
         eq_(g, 0)
 
     def test_multi_level(self):
         global g
         g = 0
-        with stacked.var('g', 1):
+        with stackful('g', 1):
             eq_(_get_g(), 1)
-            with stacked.var('g', 2):
+            with stackful('g', 2):
                 eq_(_get_g(), 2)
             eq_(_get_g(), 1)
         eq_(g, 0)
@@ -80,11 +80,11 @@ class ModuleGlobalTests(TestCase):
             # Operate on g to collapse its quantum superposition:
             things.append(g + 1)
 
-        with stacked.var('g', 1):
+        with stackful('g', 1):
             t = Thread(target=get_global)  # TODO: Right now, the thread sees it as 0. Should it be 1?
             lock.acquire()
             t.start()
-            with stacked.var('g', 9):
+            with stackful('g', 9):
                 lock.release()
                 t.join()
                 eq_(things[0], 1)
@@ -98,7 +98,7 @@ class ModuleGlobalTests(TestCase):
         global g
         g = 0
         with catch_warnings(record=True) as warnings:
-            with stacked.var('g', 8):
+            with stackful('g', 8):
                 _set_g()
                 eq_(g, 'yeah')
         eq_(len(warnings), 1)
@@ -111,9 +111,9 @@ class ModuleGlobalTests(TestCase):
         """Gee, I wonder how this acts. What should it even do? It should act like it's copying an immutable, not like it's getting an obj ref."""
         global g
         g = 0
-        with stacked.var('g', 7):
+        with stackful('g', 7):
             seven = g  # Should act as if it's copying the 7.
-            with stacked.var('g', 8):
+            with stackful('g', 8):
                 eight = g
         eq_(seven, 7)
         eq_(eight, 8)
@@ -123,7 +123,7 @@ class ModuleGlobalTests(TestCase):
         """Make sure stacking works atop uninitialized globals."""
         global g
         assert_raises(NameError, lambda: g)
-        with stacked.var('g', 2):
+        with stackful('g', 2):
             eq_(_get_g(), 2)
         assert_raises(NameError, lambda: g)
 
@@ -136,7 +136,7 @@ def test_other_modules():
     # able to mutate the value objects themselves if they're mutable. Or maybe
     # we should pass 'other_module.some_global' in.
     the_global = other_module.some_global
-    with stacked.var('the_global', 8):
+    with stackful('the_global', 8):
         eq_(other_module.some_global, 8)
     eq_(other_module.some_global, orig)
 
@@ -145,5 +145,5 @@ def test_other_modules():
 #     def closure():
 #         return c
 #     eq_(closure(), 0)
-#     with stacked.var('c', 1):
+#     with stackful('c', 1):
 #

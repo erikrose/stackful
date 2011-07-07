@@ -9,7 +9,9 @@ from warnings import warn
 _no_such_thing = object()
 
 
-class var(object):
+class stackful(object):
+    # Not CamelCase because the fact that it's a class is just an
+    # implementation detail and may change.
     def __init__(self, name, value):
         self.name = name
         self.value = value

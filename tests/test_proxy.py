@@ -6,8 +6,8 @@ Tests for a representative subset of magic method overrides.
 from nose import SkipTest
 from nose.tools import eq_
 
-from stacked import Proxy
-from stacked.tests import fails
+from stackful import Proxy
+from stackful.tests import fails
 
 
 def six_proxy():
@@ -49,7 +49,7 @@ def test_isinstance():
     assert type(six).__instancecheck__(six)
 
 def test_issubclass():
-    # TODO: Perhaps actually create a new class for each stacked.var() call,
+    # TODO: Perhaps actually create a new class for each stackful() call,
     # one that defines __subclasscheck__ as desired.
     raise SkipTest
     eq_(issubclass(basestring, type(str_proxy())),
