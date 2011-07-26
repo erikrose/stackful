@@ -2,10 +2,10 @@
 stackful
 ========
 
-stackful provides Lisp-style `dynamic variables`_ for Python. They're akin to
-Perl’s ``local`` variables but with less tendency to degrade into spaghetti.
-Use it with care, and you can quickly defeat many common cases of coupling
-without having to refactor the world.
+stackful provides a variant on Lisp-style `dynamic variables`_ for Python.
+They're akin to Perl’s ``local`` variables but with less tendency to degrade
+into spaghetti. Use it with care, and you can quickly defeat many common cases
+of coupling without having to refactor the world.
 
 .. _`dynamic variables`: http://www.gigamonkeys.com/book/variables.html#dynamic-aka-special-variables
 
@@ -19,15 +19,17 @@ Ronner
 Any software framework will inevitably have holes. There will be points of
 customization you’ll wish you had, assumptions you’ll wish you hadn’t, and
 chains of dependency you wish you could just poke through without the
-maintenance drawbacks of globals. stacker gives you a new kind of variable
+maintenance drawbacks of globals. stackful gives you a new kind of variable
 which, used prudently, lets you overcome some of the common instances of
-shortsightedness without having to refactor your (or worse, somebody else’s)
-framework.
+framework shortsightedness without having to refactor your (or worse, somebody
+else’s) framework.
 
 stackful is a one-trick pony. It lets you transform a global variable into one
 whose value is set on a per-call-stack basis. You can say...
 
 ::
+
+  from stackful import stackful
 
   with stackful('some_global', 8):
       foo()
@@ -35,10 +37,10 @@ whose value is set on a per-call-stack basis. You can say...
 ...and ``some_global`` will, for the extent of the ``with`` block, be converted
 into a so-called “stackful” variable which has the value ``8``. That new value
 will be seen only on this thread and only until the ``with`` exits: ``foo()``,
-if it reads the ``some_global`` variable, will see the ``8``, and so will
-anything ``foo()`` calls. However, other threads will continue to see the old
-value, if any. When the ``with`` exits, even this thread will see the variable
-go back to its original value.
+if it reads the ``some_global`` variable, will see the ``8``, as will anything
+``foo()`` calls. However, other threads will continue to see the old value, if
+any. When the ``with`` exits, even this thread will see the variable go back to
+its original value.
 
 
 What could this possibly be good for?
@@ -62,6 +64,8 @@ to change to get the threadlocal value out of the object. You’re stuck.
 
 But stackful can save you! A simple transformation of the global variable to a
 stackful one during the archival operations is all you need::
+
+  from stackful import stackful
 
   with stackful('db', 'postgres://archival.example.com'):
       do_archival_stuff()
@@ -89,11 +93,13 @@ invalid value, and then making it stackful, we make forgetting to initialize it
 obvious while keeping its value private to the call stack where it was set.
 Here’s how it looks::
 
+  from stackful import stackful
+
   rogue_param = None
 
   def outer():
       global rogue_param
-      with stackful('rogue_param', 8):
+      with stackful('rogue_param', 9):
           middle()
 
   def middle():
@@ -105,8 +111,8 @@ Here’s how it looks::
 
   outer()
 
-Again, everybody’s thread-safe, and once the ``with`` exits, ``rogue_param``
-goes back to being ``None``.
+The above prints ``10``. Again, everybody’s thread-safe, and once the ``with``
+exits, ``rogue_param`` goes back to being ``None``.
 
 Incidentally, we don’t do it above, but we can even stack new values on top of
 the old for multiple concurrent invocations of our inner function with
@@ -154,17 +160,30 @@ Caveats
 Since this is a pure-Python implementation, there were some limits to the kinds
 of lies we could tell. Here are stackful’s constraints:
 
-* It works only with globals at the moment.
+* It works only with globals at the moment (which may not be such a bad thing
+  from a static reasoning standpoint).
 * If someone rebinds a stackful global, it will cease to be stackful; Python
   gives us no opportunity to intercept the rebinding. Thus, it's best to stick
-  to read-only and mutable values.
+  to read-only values and ones that get mutated in place.
 * There are a few introspections we can’t paper over:
 
-  * The ``obj is other_obj`` object identity test. It is understandable that
-    the interpreter goes straight to pointer comparison here for speed.
+  * The ``obj is other_obj`` object identity test. Understandably, the
+    interpreter goes straight to pointer comparison here for speed.
   * ``type(obj)``. There’s just no escaping this, but code should be using
     ``isinstance()`` for type testing, and other uses are pretty niche.
     ``isinstance()`` looks at ``__class__``, and we do fake that.
+* I haven't even thought about wrapping old-style classes. Maybe it works, and
+  maybe it doesn't.
+
+
+Genesis
+-------
+
+This started as a bit of a stunt during a "hack day" at Open Source Bridge
+2011. I'd found myself reaching for Lisp-style dynamic vars from time to time
+for a few years and decided, more as a technical challenge than because it was
+a good idea, to try hacking them onto Python. Please keep this in mind if you
+decide to use stackful.
 
 
 Version history
