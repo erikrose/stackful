@@ -77,17 +77,22 @@ def test_type():
     """Make sure proxying a type doesn't crash."""
     eq_(repr(Proxy(int, 6)), "<type 'int'>")
 
-def test_distinguish_builtins_from_attr_access():
-    """Accessing __getattr__ on a proxy to an object without it should throw an error.
+def test_magic_builtins():
+    """Explicitly accessing a magic method on a proxy to an object that doesn't define it should throw an error, not fall through to the builtin equivalent."""
+    # TODO: Figure out why this works.
+    class ObjectWithAttr(object):
+        a = 3
+    o = ObjectWithAttr()
 
-    Likewise for __lt__ or any other magic method.
+    # Make sure the normal case works, just to validate the test:
+    eq_(getattr(o, 'a'), 3)
 
-    """
-    p = Proxy(object(), 6)
+    # And try the real thing. Make sure __getattr__ doesn't fall back to getattr():
+    p = Proxy(o, 6)
     try:
         p.__getattr__
     except AttributeError, e:
-        eq_(e.args[0], "'object' object has no attribute '__getattr__'")
+        eq_(e.args[0], "'ObjectWithAttr' object has no attribute '__getattr__'")
     else:
         raise AssertionError("Nonexistent attribute access didn't raise an AttributeError.")
 
@@ -96,9 +101,9 @@ def test_hasattr_falsity():
     """hasattr() should be false on a special method if the original object didn't have it."""
     assert not hasattr(six_proxy(), '__len__')
 
-# @fails
-# def test_is():
-#     assert six_proxy() is 6
+@fails
+def test_is():
+    assert six_proxy() is 6
 
 def test_descriptors():
     """Make sure descriptor calls fall through to proxied object."""

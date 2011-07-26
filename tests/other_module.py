@@ -1,1 +1,1 @@
-some_global = 7
+some_immutable = 7

@@ -38,19 +38,32 @@ class stackful(object):
 
 
 _nop = lambda *args, **kwargs: None
+# Methods which, if not defined on a wrapped instance, should be delegated to a builtin
 # Basically, [x for x in [double-underscore methods] if hasattr(__builtins__, x)]:
 _implicit_methods = [('getattr', getattr),
                      ('setattr', setattr),
                      ('delattr', delattr),
+                     ('del', _nop),
                      ('repr', repr),
+                     ('str', str),
+                     ('lt', operator.lt),
+                     ('le', operator.le),
+                     ('eq', operator.eq),
+                     ('ne', operator.ne),
+                     ('gt', operator.gt),
+                     ('ge', operator.ge),
                      ('cmp', cmp),
                      ('hash', hash),
+                     # ('rcmp', rcmp),  # TODO: Fix NameError.
+                     # TODO: Consider putting ('nonzero', operator.not) here.
                      ('len', len),
+                     ('unicode', unicode),
+                     # I don't think __get__ and __set__ need to be here, but I
+                     # could be persuaded. Also, if you proxy a descriptor,
+                     # you're more disgusting than I am.
                      ('coerce', coerce),
                      # TODO: more here
-                     ('del', _nop),
-                     ('eq', operator.eq),
-                     ('lt', operator.lt)]
+                     ]
 _implicit_methods = dict(('__%s__' % name, meth) for name, meth in _implicit_methods)
 
 
@@ -78,17 +91,15 @@ class FallthroughMethods(type):
             def fallthrough(self, *args, **kwargs):
                 """Pass through a method call to the object within a Proxy.
 
-                Find the method on the object contained by the Proxy or,
-                failing that, on its type. (8.__eq__ does not exist, but
-                type(8).__eq__ does.) Failing that, try an equivalent builtin
-                method which the interpreter would ordinarily implicitly
-                dispatch to. Call that method with whatever args were passed to
-                me.
+                Find the method on the object contained by the Proxy. Failing
+                that, try an equivalent builtin method which the interpreter
+                would ordinarily implicitly dispatch to. Call that method with
+                whatever args were passed to me.
 
                 """
-                # On a call to a magic method, see if it has a builtin equivalent. If it does, call that on the proxied object. That'll dispatch to instance and type and builtin as appropriate. The trouble with this is that it doesn't distinguish between calling getattr(proxy, 'smoo') and proxy.__getattr__('smoo'). The latter should throw an AttributeError if the proxied obj doesn't define __getattr__. But hey, we actually *can* distinguish them: in proxy.__getattr__, the only thing we see is a call to proxy.__getattribute__('__getattr__'). In proxy.d, we see only proxy.__getattribute__('d').
+                # On a call to a magic method, see if it has a builtin equivalent. If it does, call that on the proxied object. That'll dispatch to instance and type and builtin as appropriate. The trouble with this is that it doesn't distinguish between calling getattr(proxy, 'smoo') and proxy.__getattr__('smoo'). (test_distinguish_builtins_from_attr_access tests this.) The latter should throw an AttributeError if the proxied obj doesn't define __getattr__. But hey, we actually *can* distinguish them: in proxy.__getattr__, the only thing we see is a call to proxy.__getattribute__('__getattr__'). In proxy.d, we see only proxy.__getattribute__('d').
 
-                threadlocals = object.__getattribute__(self, '_threadlocals_from_stacked')
+                threadlocals = object.__getattribute__(self, '_stackful_threadlocals')
                 try:
                     inner_obj = threadlocals.value
                 except AttributeError:
@@ -100,12 +111,11 @@ class FallthroughMethods(type):
                 try:
                     bound_method = getattr(inner_obj, method_name)
                 except AttributeError:
-                    # The method wasn't defined on the instance or its
-                    # type. If it has a builtin implicit implementation
-                    # like getattr, use that:
-                    unbound_method = _implicit_methods.get(method_name)
-                    if unbound_method:
-                        return unbound_method(inner_obj, *args, **kwargs)
+                    # The method wasn't defined on the instance. If it has a
+                    # builtin implicit implementation like getattr, use that:
+                    builtin_method = _implicit_methods.get(method_name)
+                    if builtin_method:
+                        return builtin_method(inner_obj, *args, **kwargs)
                     else:
                         # The method was neither defined nor implicitly
                         # supported. It's a bona fide missing attr.
@@ -130,7 +140,7 @@ class FallthroughMethods(type):
         # We actually don't need to override __instancecheck__; when you call
         # isinstance(), the interpreter looks up the type of the object by
         # looking at __class__, and __getattribute__ suffices to delegate that
-        # to the proxied object.
+        # to the inner object.
         for method_name in ['call', 'getattr', 'setattr', 'delattr', 'getitem',
             'del', 'repr', 'str', 'lt', 'le', 'eq', 'ne', 'gt', 'ge', 'cmp',
             'hash', 'rcmp', 'nonzero', 'len', 'unicode', 'get', 'set',
@@ -174,16 +184,16 @@ class Proxy(object):  # Assumptions about what this subclasses are everywhere.
         # __getattribute__ and any __setattr__ on the contained object in order
         # to set some attrs on the Proxy object itself.
         my_dict = object.__getattribute__(self, '__dict__')
-        my_dict['_threadlocals_from_stacked'] = threading.local()
-        my_dict['_threadlocals_from_stacked'].value = value
+        my_dict['_stackful_threadlocals'] = threading.local()
+        my_dict['_stackful_threadlocals'].value = value
         my_dict['orig'] = orig
         my_dict['name'] = name
 
     def __getattribute__(self, attr):
-        # TODO: Make _threadlocals_from_stacked a threadlocal bunch of stacks.
+        # TODO: Make _stackful_threadlocals a threadlocal bunch of stacks.
         # [Ed: Probably unnecessary. We can just let Proxies contain other
         # Proxies.]
-        threadlocals = object.__getattribute__(self, '_threadlocals_from_stacked')
+        threadlocals = object.__getattribute__(self, '_stackful_threadlocals')
         try:
             # When you have a local() and try to read an attr that's not
             # defined in this thread, you get an AttributeError.
@@ -197,4 +207,6 @@ class Proxy(object):  # Assumptions about what this subclasses are everywhere.
                             "now you're trying to read it in a thread where it's "
                             "still uninitialized." % name)
         else:
+            # Interpreter will fall back to the __getattr__ created by the
+            # metaclass if this raises an AttributeError:
             return getattr(obj, attr)
